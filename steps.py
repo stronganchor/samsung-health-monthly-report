@@ -155,18 +155,30 @@ def aggregate_trend(df):
 
 # ---------- public interface ----------
 def summarize_steps(base_path: Path, debug=False):
-    ped = smart_load(base_path / "com.samsung.shealth.tracker.pedometer_step_count.20250801145008.csv",
-                     expect=["run_step", "walk_step"], debug=debug)
-    day = load_day_summary_manual(base_path / "com.samsung.shealth.tracker.pedometer_day_summary.20250801145008.csv",
-                                  debug=debug)
-    trn = smart_load(base_path / "com.samsung.shealth.step_daily_trend.20250801145008.csv",
-                     expect=["count"], debug=debug)
+    # Use glob patterns to find files with any timestamp
+    ped_files = list(base_path.glob("com.samsung.shealth.tracker.pedometer_step_count.*.csv"))
+    day_files = list(base_path.glob("com.samsung.shealth.tracker.pedometer_day_summary.*.csv"))
+    trn_files = list(base_path.glob("com.samsung.shealth.step_daily_trend.*.csv"))
+
+    if debug:
+        print(f"[steps] [DEBUG] Found pedometer files: {[f.name for f in ped_files]}")
+        print(f"[steps] [DEBUG] Found day summary files: {[f.name for f in day_files]}")
+        print(f"[steps] [DEBUG] Found trend files: {[f.name for f in trn_files]}")
+        print(f"[steps] [DEBUG] Base path: {base_path}")
+
+    # Use the first (or most recent) file found, or create empty path if none found
+    ped_path = ped_files[0] if ped_files else base_path / "nonexistent.csv"
+    day_path = day_files[0] if day_files else base_path / "nonexistent.csv"
+    trn_path = trn_files[0] if trn_files else base_path / "nonexistent.csv"
+
+    ped = smart_load(ped_path, expect=["run_step", "walk_step"], debug=debug)
+    day = load_day_summary_manual(day_path, debug=debug)
+    trn = smart_load(trn_path, expect=["count"], debug=debug)
 
     merged = aggregate_day_summary(day)  # DataFrame with merged + avg_daily
     detailed = aggregate_pedometer_detailed(ped)  # Series
     trend = aggregate_trend(trn)  # Series
 
-    # Build a combined per-month dict for easier formatting upstream
     return {
         "merged": merged,        # DataFrame
         "detailed": detailed,    # Series
