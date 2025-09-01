@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import sys
 import pathlib
 from steps import summarize_steps, format_steps_section
@@ -40,3 +41,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
