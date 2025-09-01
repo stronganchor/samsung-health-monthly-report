@@ -71,11 +71,27 @@ def _build_json_index(json_dir: Path, debug=False):
         if debug:
             print(f"[hrv] JSON directory {json_dir} does not exist.")
         return index
-    for p in json_dir.rglob("*.binning_data.json"):
+
+    # More thorough search - look for any JSON files
+    json_files = list(json_dir.rglob("*.json"))
+    if debug:
+        print(f"[hrv] [DEBUG] Found {len(json_files)} total JSON files in {json_dir}")
+        if json_files:
+            print(f"[hrv] [DEBUG] Sample JSON files: {[f.name for f in json_files[:5]]}")
+
+    # Index both full names and base names (without .binning_data.json)
+    for p in json_files:
         name = p.name
         index.setdefault(name, []).append(p)
+
+        # Also index by the UUID part if it's a .binning_data.json file
+        if name.endswith('.binning_data.json'):
+            uuid_part = name.replace('.binning_data.json', '')
+            index.setdefault(uuid_part + '.binning_data.json', []).append(p)
+
     if debug:
-        print(f"[hrv] Indexed {sum(len(v) for v in index.values())} HRV histogram JSON(s) across {len(index)} unique names.")
+        print(f"[hrv] Indexed {len(index)} unique JSON file patterns.")
+        print(f"[hrv] [DEBUG] Index keys (first 10): {list(index.keys())[:10]}")
     return index
 
 
@@ -103,7 +119,14 @@ def summarize_hrv(base_path: Path, debug=False):
     json_index = _build_json_index(json_dir, debug=debug)
 
     records = []
+    processed_count = 0
+    found_count = 0
+
     for idx, row in df.iterrows():
+        processed_count += 1
+        if debug and processed_count % 1000 == 0:
+            print(f"[hrv] [DEBUG] Processed {processed_count} rows, found {found_count} JSON files")
+
         bin_ref = row.get("binning_data")
         if not (isinstance(bin_ref, str) and bin_ref.strip().endswith(".binning_data.json")):
             bin_ref = None
@@ -112,29 +135,31 @@ def summarize_hrv(base_path: Path, debug=False):
                     bin_ref = v.strip()
                     break
         if not bin_ref:
-            if debug:
+            if debug and processed_count <= 5:  # Only show first few
                 print(f"[hrv] no valid binning_data field in row {idx}; skipping")
             continue
 
         bin_ref_clean = bin_ref.strip()
         json_path = None
 
-        # exact lookup in prebuilt index
+        # Try multiple lookup strategies
+        # 1. exact lookup in prebuilt index
         candidates = json_index.get(bin_ref_clean)
         if candidates:
             json_path = candidates[0]
         else:
-            # fallback: any indexed name that contains the token substring
+            # 2. fallback: any indexed name that contains the token substring
             for name, paths in json_index.items():
-                if bin_ref_clean in name:
+                if bin_ref_clean in name or name in bin_ref_clean:
                     json_path = paths[0]
                     break
 
         if not json_path or not json_path.exists():
-            if debug:
+            if debug and found_count < 5:  # Only show first few failures
                 print(f"[hrv] histogram JSON {bin_ref_clean} not found for row {idx} via index.")
             continue
 
+        found_count += 1
         try:
             raw = json.loads(json_path.read_text(encoding="utf-8"))
         except Exception as e:
@@ -163,7 +188,7 @@ def summarize_hrv(base_path: Path, debug=False):
             except Exception:
                 date = None
         if date is None or pd.isna(date):
-            if debug:
+            if debug and found_count <= 5:
                 print(f"[hrv] could not determine date for histogram {bin_ref_clean} (row {idx}); skipping.")
             continue
         date = pd.to_datetime(date).normalize()
@@ -183,6 +208,9 @@ def summarize_hrv(base_path: Path, debug=False):
                 "deviceuuid": row.get("deviceuuid"),
             }
         )
+
+    if debug:
+        print(f"[hrv] [DEBUG] Final stats: processed {processed_count} rows, found {found_count} JSON files, extracted {len(records)} records")
 
     if not records:
         if debug:
