@@ -80,11 +80,20 @@ def _build_json_index(json_dir: Path, debug=False):
 
 
 def summarize_hrv(base_path: Path, debug=False):
-    hrv_csv = next(base_path.glob("com.samsung.health.hrv*.csv"), None)
-    if hrv_csv is None:
+    hrv_files = list(base_path.glob("com.samsung.health.hrv*.csv"))
+
+    if debug:
+        print(f"[hrv] [DEBUG] Found HRV files: {[f.name for f in hrv_files]}")
+        print(f"[hrv] [DEBUG] Base path: {base_path}")
+
+    if not hrv_files:
         if debug:
             print("[hrv] No HRV CSV found.")
         return {"daily": pd.DataFrame(), "monthly": pd.DataFrame()}
+
+    hrv_csv = hrv_files[0]  # Use the first HRV file found
+    if debug:
+        print(f"[hrv] [DEBUG] Using HRV file: {hrv_csv.name}")
 
     df = _smart_load_hrv_csv(hrv_csv, debug=debug)
     if df.empty:
